@@ -1,0 +1,152 @@
+---
+title: "Public Transport Commuters"
+output: html_document
+date: "2023-12-14"
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readr)
+library(ggplot2)
+```
+
+## Problem & CRISP-DM
+
+The problem we want to understand is how BART commuter patterns have changed since the start of Covid. We picked a data-set from the last 11 years from BART: Bay Area Rapid Transit. The data-sets available start from 2011 but since our question revolves around how hings during COVID have changed, we will focus on the years since COVID started; 2020, 2021, 2022, and 2023.
+
+```{r}
+bartdata2020 <- read_csv("date-hour-soo-dest-2020.csv")
+bartdata2021 <- read_csv("date-hour-soo-dest-2021.csv")
+bartdata2022 <- read_csv("date-hour-soo-dest-2022.csv")
+bartdata2023 <- read_csv("date-hour-soo-dest-2023.csv")
+```
+
+```{r}
+# merging the datasets we want so we only have one to work with
+bartdataTOTAL <- rbind(bartdata2020, bartdata2021, bartdata2022, bartdata2023)
+
+```
+
+```{r}
+View(bartdataTOTAL)
+```
+
+Our data-set has only 5 columns of variables titled `Date`, `Hour`, `Origin Station`, `Destination Station`, and `Trip Count` which means there is no need to think about and delete any unnecessary features.
+`Hour` is based on a 24-clock and describes the time of day and `Trip Count` is how many people made that commute in that observation.
+Before we explore the data-set and clean it up, we need to translate the business problem into a few questions focused on the data so we can gleam what's important from this data-set.
+
+Things we want to understand about the data might be: 
+1.) What patterns are evident in the data-set?
+2.) When are the most busiest days and times?
+3.) What are the highest used origin points and where are the places people travel to the most?
+4.) What are the busiest commutes (origin + destination)?
+
+Questions we are looking to answer: 1.) Besides the overall count of ridership, what changed throughout COVID?
+2.) Did the destinations people frequented change between 2020 and 2023?
+3.) Did the distribution for what time of day people travel change?
+4.) Did the amount of people that traveled during expected busy days (ie. holidays) change?
+
+Now that we've established specific questions, let's try to understand the values in this data-set a bit better and get rid of any errors and fix missing values.
+
+### Examining The Data
+
+```{r}
+## cleaning any errors, basic examination
+str(bartdataTOTAL)
+dim(bartdataTOTAL)
+summary(bartdataTOTAL)
+
+```
+
+```{r}
+## trip count has a max that is odd
+plot(bartdataTOTAL$`Trip Count`)
+```
+
+We noticed during our coding that the points that look like outliers are observations with slightly higher trip counts.Therefore, this is not something to worry about.
+
+```{r}
+# Calculate percent of missing values for features
+missing_df =  as.numeric(purrr::map(bartdataTOTAL, ~mean(is.na(.))))*100
+```
+
+We can conclude that there are no missing values from this.
+After observing any possible errors and missing values, we can now finish exploring the features of our data-set.
+
+### Exploring the Dataset
+
+```{r}
+## What patterns are evident in the dataset? When are the most busiest months and times? 
+## too many individual days so it will be easier to group them by month so first a month column needs to be made
+library(data.table)
+setDT(bartdataTOTAL)[, Month_Yr := format(as.Date(Date), "%Y-%m") ]
+
+# busiest by number of routes
+head(sort(table(bartdataTOTAL$Month_Yr), decreasing=TRUE))
+head(sort(table(bartdataTOTAL$Hour), decreasing=TRUE))
+
+```
+
+```{r}
+## What are the highest used origin points and where are the places people travel to the most?
+head(sort(table(bartdataTOTAL$`Origin Station`), decreasing=TRUE)) 
+head(sort(table(bartdataTOTAL$`Destination Station`), decreasing=TRUE)) 
+
+## What are the top 10 busiest commutes (origin to destination)?
+bartdataTOTAL %>% 
+  expand(nesting(bartdataTOTAL$`Origin Station`, bartdataTOTAL$`Destination Station`)) 
+
+```
+
+```{r}
+## every unique origin and destination station
+unique(bartdataTOTAL$`Origin Station`)
+
+unique(bartdataTOTAL$`Destination Station`)
+
+```
+
+Now that we have looked for multiple patterns, we have a better idea of what features we wish we had.
+One feature that would have given us more information about the ridership on BART would have been a trip duration feature. Other than that one additional helpful feature, our data set gives us everything we need to get some good analysis done which is why we picked it.
+
+## Regression Model
+
+We picked the Linear Regression model because it's simple to understand.
+It helps us see how each thing we're looking at, like time or stations, affects the number of trips people take. This model is good at catching straight-line relationships between things.
+If we think about how time, stations, or months impact trips is mostly a straight line, this model can highlight this well.We used a clever way to teach the model using different parts of the data to make sure it's good at predicting new information too.This model assumes everything works in a straight line, so it might not catch tricky or curved relationships. In those types of cases, models like Random Forest might be better.
+
+```{r}
+library(caret)
+
+predictor_vars <- c(bartdataTOTAL$Hour, bartdataTOTAL$Month_Yr, bartdataTOTAL$`Origin Station`, bartdataTOTAL$`Destination Station`)
+response_var <- bartdataTOTAL$`Trip Count`
+
+data_for_model <- bartdataTOTAL[, c(predictor_vars, response_var)]
+
+control <- trainControl(method = "cv", number = 10)  # 10-fold cross-validation
+
+lm_model <- train(as.formula(paste(response_var, paste(predictor_vars, collapse = " + "), sep = " ~ ")),
+                  data = data_for_model,
+                  method = "lm",  # Using linear regression method
+                  trControl = control)
+
+print(lm_model)
+```
+
+## Analyzing The Results
+
+In exploring the BART commuter patterns since COVID-19, we gathered data from 2020 to 2023.
+Our focus is on variables like Date, Hour, Origin Station, Destination Station, and Trip Count.
+Fortunately, we didn't need to delete any unnecessary features as all columns were relevant.
+We aimed to understand changing trends during COVID-19, focusing on busiest times, popular routes, and shifts in travel patterns. After checking for errors and missing data, we delved into the data-set's characteristics.
+
+We organized the data by month to discern the busiest periods and by hour to identify peak travel times.
+Analyzing station usage revealed the top origin and destination points, which are crucial for understanding popular commutes. However, we didn't delve into the busiest commutes, intending to do so later.
+Our data-set encompassed the necessary variables, but additional information like weather or special events could have enriched our analysis, providing context for travel fluctuations. Lastly, in the analysis section, we utilized a Linear Regression model to predict trip counts based on time, stations, and months.While this model simplifies relationships between variables, it might not capture nonlinear associations. Overall, our exploration provides insights into changing commuter behaviors during COVID-19, highlighting potential areas for further investigation.
